@@ -8,7 +8,7 @@
 #include "SDMMCAnalyzer.h"
 #include "SDMMCHelpers.h"
 
-class ANALYZER_EXPORT SDMMCAnalyzer : public Analyzer
+class SDMMCAnalyzer : public Analyzer2
 {
 public:
 	static const char Name[];
@@ -16,19 +16,20 @@ public:
 public:
 	SDMMCAnalyzer();
 	virtual ~SDMMCAnalyzer();
-
-	virtual const char *GetAnalyzerName() const;
-
+	virtual void SetupResults();
 	virtual void WorkerThread();
-	virtual bool NeedsRerun();
 
 	virtual U32 GenerateSimulationData( U64 newest_sample_requested, U32 sample_rate, SimulationChannelDescriptor** simulation_channels );
 	virtual U32 GetMinimumSampleRateHz();
+
+	virtual const char *GetAnalyzerName() const;
+	virtual bool NeedsRerun();
 
 protected:
 	void AdvanceToNextClock();
 	int TryReadCommand();
 	int WaitForAndReadMMCResponse(struct MMCResponse response);
+	void FindDataLimits();
 
 protected:
 	std::auto_ptr<SDMMCAnalyzerSettings> mSettings;

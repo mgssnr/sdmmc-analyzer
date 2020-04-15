@@ -28,6 +28,7 @@ public:
 
 	Channel mClockChannel;
 	Channel mCommandChannel;
+
 	enum SDMMCProtocol mProtocol;
 	enum SDMMCSampleEdge mSampleEdge;
 
