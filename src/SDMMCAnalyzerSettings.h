@@ -28,7 +28,7 @@ public:
 
 	Channel mClockChannel;
 	Channel mCommandChannel;
-	Channel mData0Channel;
+	Channel mDat0Channel;
 
 	enum SDMMCProtocol mProtocol;
 	enum SDMMCSampleEdge mSampleEdge;
@@ -36,7 +36,7 @@ public:
 protected:
 	std::auto_ptr<AnalyzerSettingInterfaceChannel> mClockChannelInterface;
 	std::auto_ptr<AnalyzerSettingInterfaceChannel> mCommandChannelInterface;
-	std::auto_ptr<AnalyzerSettingInterfaceChannel> mData0ChannelInterface;
+	std::auto_ptr<AnalyzerSettingInterfaceChannel> mDat0ChannelInterface;
 	std::auto_ptr<AnalyzerSettingInterfaceNumberList> mProtocolInterface;
 	std::auto_ptr<AnalyzerSettingInterfaceNumberList> mSampleEdgeInterface;
 };
