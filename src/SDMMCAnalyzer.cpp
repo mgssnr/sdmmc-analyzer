@@ -6,7 +6,7 @@
 const char SDMMCAnalyzer::Name[] = "SDMMC";
 
 SDMMCAnalyzer::SDMMCAnalyzer()
-:	Analyzer(),
+:	Analyzer2(),
 	mSettings(new SDMMCAnalyzerSettings()),
 	mSimulationInitialized(false)
 {
@@ -18,6 +18,14 @@ SDMMCAnalyzer::~SDMMCAnalyzer()
 	KillThread();
 }
 
+void SDMMCAnalyzer::SetupResults()
+{
+    mResults.reset( new SDMMCAnalyzerResults( this, mSettings.get() ) );
+    SetAnalyzerResults( mResults.get() );
+    mResults->AddChannelBubblesWillAppearOn( mSettings->mCommandChannel );
+}
+
+
 const char* SDMMCAnalyzer::GetAnalyzerName() const
 {
 	return Name;
@@ -25,10 +33,9 @@ const char* SDMMCAnalyzer::GetAnalyzerName() const
 
 void SDMMCAnalyzer::WorkerThread()
 {
-	mResults.reset(new SDMMCAnalyzerResults(this, mSettings.get()));
-	SetAnalyzerResults(mResults.get());
-
-	mResults->AddChannelBubblesWillAppearOn(mSettings->mCommandChannel);
+	// mResults.reset(new SDMMCAnalyzerResults(this, mSettings.get()));
+	// SetAnalyzerResults(mResults.get());
+	// mResults->AddChannelBubblesWillAppearOn(mSettings->mCommandChannel);
 
 	mClock = GetAnalyzerChannelData(mSettings->mClockChannel);
 	mCommand = GetAnalyzerChannelData(mSettings->mCommandChannel);
@@ -39,7 +46,7 @@ void SDMMCAnalyzer::WorkerThread()
 		ReportProgress(mClock->GetSampleNumber());
 		CheckIfThreadShouldExit();
 		AdvanceToNextClock();
-		
+
 		cmdindex = TryReadCommand();
 		if (cmdindex < 0) {
 			/* continue if parsing the command failed */
@@ -50,6 +57,8 @@ void SDMMCAnalyzer::WorkerThread()
 			struct MMCResponse response = SDMMCHelpers::MMCCommandResponse(cmdindex);
 			if (response.mType != MMC_RSP_NONE)
 				WaitForAndReadMMCResponse(response);
+			if (response.mHasData)
+				FindDataLimits();
 		} else {
 			/* FIXME: implement SD response handling */
 		}
@@ -61,11 +70,16 @@ bool SDMMCAnalyzer::NeedsRerun()
 	return false;
 }
 
+void SDMMCAnalyzer::FindDataLimits()
+{
+
+}
+
 U32 SDMMCAnalyzer::GenerateSimulationData(U64 newest_sample_requested, U32 sample_rate, SimulationChannelDescriptor** simulation_channels)
 {
 	if (!mSimulationInitialized) {
-	mDataGenerator.Initialize(GetSimulationSampleRate(), mSettings.get());
-	mSimulationInitialized = true;
+		mDataGenerator.Initialize(GetSimulationSampleRate(), mSettings.get());
+		mSimulationInitialized = true;
 	}
 
 	return mDataGenerator.GenerateSimulationData(newest_sample_requested, sample_rate, simulation_channels);
@@ -87,17 +101,82 @@ void SDMMCAnalyzer::AdvanceToNextClock()
 	mCommand->AdvanceToAbsPosition(mClock->GetSampleNumber());
 }
 
+#if 1
 int SDMMCAnalyzer::TryReadCommand()
 {
 	int index;
-	
+
+	Frame frame;
+
 	/* check for start bit */
 	if (mCommand->GetBitState() != BIT_LOW)
 		return -1;
 
 	mResults->AddMarker(mClock->GetSampleNumber(), AnalyzerResults::Start, mSettings->mCommandChannel);
 	AdvanceToNextClock();
-	
+
+	/* transfer bit */
+	if (mCommand->GetBitState() != BIT_HIGH) {
+		/* if host is not transferring this is no command */
+		mResults->AddMarker(mClock->GetSampleNumber(), AnalyzerResults::X, mSettings->mCommandChannel);
+		return -1;
+	}
+	AdvanceToNextClock();
+
+	frame.mStartingSampleInclusive = mClock->GetSampleNumber();
+	frame.mData1 = 0;
+	frame.mData2 = 0;
+	frame.mType = SDMMCAnalyzerResults::FRAMETYPE_COMMAND;
+
+	mResults->AddMarker(mClock->GetSampleNumber(), AnalyzerResults::Dot, mSettings->mCommandChannel);
+	for (int i = 0; i < 6; i++) {
+		frame.mData1 = (frame.mData1 << 1) | mCommand->GetBitState();
+		AdvanceToNextClock();
+	}
+
+	mResults->AddMarker(mClock->GetSampleNumber(), AnalyzerResults::Dot, mSettings->mCommandChannel);
+	for (int i = 0; i < 32; i++) {
+		frame.mData2 = (frame.mData2 << 1) | mCommand->GetBitState();
+		AdvanceToNextClock();
+	}
+
+	/* save index for returning */
+	index = (int)frame.mData1;
+
+	/*
+	 * we'll store the CRC in the bottom 7 bits of mData2 */
+	mResults->AddMarker(mClock->GetSampleNumber(), AnalyzerResults::Dot, mSettings->mCommandChannel);
+	for (int i = 0; i < 7; i++) {
+		frame.mData2 = (frame.mData2 << 1) | mCommand->GetBitState();
+		AdvanceToNextClock();
+	}
+
+	frame.mEndingSampleInclusive = mClock->GetSampleNumber() - 1;
+
+	mResults->AddFrame(frame);
+
+	/* stop bit */
+	mResults->AddMarker(mClock->GetSampleNumber(), AnalyzerResults::Stop, mSettings->mCommandChannel);
+
+	mResults->CommitResults();
+
+	ReportProgress(mClock->GetSampleNumber());
+
+	return index;
+}
+
+#else
+int SDMMCAnalyzer::TryReadCommand()
+{
+	int index;
+
+	/* check for start bit */
+	if (mCommand->GetBitState() != BIT_LOW)
+		return -1;
+
+	mResults->AddMarker(mClock->GetSampleNumber(), AnalyzerResults::Start, mSettings->mCommandChannel);
+	AdvanceToNextClock();
+
 	/* transfer bit */
 	if (mCommand->GetBitState() != BIT_HIGH) {
 		/* if host is not transferring this is no command */
@@ -127,7 +206,7 @@ int SDMMCAnalyzer::TryReadCommand()
 
 		frame.mEndingSampleInclusive = mClock->GetSampleNumber() - 1;
 		mResults->AddFrame(frame);
-		
+
 		/* save index for returning */
 		index = (int)frame.mData1;
 	}
@@ -154,9 +233,89 @@ int SDMMCAnalyzer::TryReadCommand()
 
 	mResults->CommitResults();
 	ReportProgress(mClock->GetSampleNumber());
-	
+
 	return index;
 }
+#endif
+
+#if 1
+int SDMMCAnalyzer::WaitForAndReadMMCResponse(struct MMCResponse response)
+{
+	int timeout = response.mTimeout + 3; // add some slack time
+
+	Frame frame;
+
+	while (timeout-- >= 0 && mCommand->GetBitState() != BIT_LOW)
+		AdvanceToNextClock();
+
+	if (timeout < 0)
+		return -1;
+
+	mResults->AddMarker(mClock->GetSampleNumber(), AnalyzerResults::Start, mSettings->mCommandChannel);
+	AdvanceToNextClock();
+
+	/* transfer bit */
+	if (mCommand->GetBitState() != BIT_LOW) {
+		/* if card is not transferring this is no response */
+		mResults->AddMarker(mClock->GetSampleNumber(), AnalyzerResults::X, mSettings->mCommandChannel);
+		return -1;
+	}
+	AdvanceToNextClock();
+
+	/* skip 6 bits */
+	for (int i = 0; i < 6; i++)
+		AdvanceToNextClock();
+
+	frame.mStartingSampleInclusive = mClock->GetSampleNumber();
+	frame.mData1 = 0;
+	frame.mData2 = 0;
+	frame.mType = SDMMCAnalyzerResults::FRAMETYPE_RESPONSE;
+	frame.mFlags = response.mType;
+
+	int bits = response.mBits;
+
+	mResults->AddMarker(mClock->GetSampleNumber(), AnalyzerResults::Dot, mSettings->mCommandChannel);
+	for (int i = 0; i < 64 && bits > 0; i++, bits--) {
+		frame.mData1 = (frame.mData1 << 1) | mCommand->GetBitState();
+		AdvanceToNextClock();
+	}
+
+	if (bits > 0) {
+		mResults->AddMarker(mClock->GetSampleNumber(), AnalyzerResults::Dot, mSettings->mCommandChannel);
+		for (int i = 0; i < 64 && bits > 0; i++, bits--) {
+			frame.mData2 = (frame.mData2 << 1) | mCommand->GetBitState();
+			AdvanceToNextClock();
+		}
+	}
+
+	/* crc */
+	if (response.mType != MMC_RSP_R2_CID && response.mType != MMC_RSP_R2_CSD) {
+		/*
+		 * we're going to stuff the CRC in mData2
+		 */
+		mResults->AddMarker(mClock->GetSampleNumber(), AnalyzerResults::Dot, mSettings->mCommandChannel);
+		for (int i = 0; i < 7; i++) {
+			frame.mData2 = (frame.mData2 << 1) | mCommand->GetBitState();
+			AdvanceToNextClock();
+		}
+	}
+
+	frame.mEndingSampleInclusive = mClock->GetSampleNumber() - 1;
+
+	mResults->AddFrame(frame);
+
+	/* stop bit */
+	mResults->AddMarker(mClock->GetSampleNumber(), AnalyzerResults::Stop, mSettings->mCommandChannel);
+
+	mResults->CommitResults();
+
+	ReportProgress(mClock->GetSampleNumber());
+
+	return 1;
+
+}
+
+#else
 
 int SDMMCAnalyzer::WaitForAndReadMMCResponse(struct MMCResponse response)
 {
@@ -170,7 +329,7 @@ int SDMMCAnalyzer::WaitForAndReadMMCResponse(struct MMCResponse response)
 
 	mResults->AddMarker(mClock->GetSampleNumber(), AnalyzerResults::Start, mSettings->mCommandChannel);
 	AdvanceToNextClock();
-	
+
 	/* transfer bit */
 	if (mCommand->GetBitState() != BIT_LOW) {
 		/* if card is not transferring this is no response */
@@ -231,9 +390,10 @@ int SDMMCAnalyzer::WaitForAndReadMMCResponse(struct MMCResponse response)
 
 	mResults->CommitResults();
 	ReportProgress(mClock->GetSampleNumber());
-	
+
 	return 1;
 }
+#endif
 
 /*
  * loader hooks

@@ -3,6 +3,33 @@
 
 #include <Analyzer.h>
 
+#define MMC_CMD_GO_IDLE_STATE           0
+#define MMC_CMD_SEND_OP_COND            1
+#define MMC_CMD_ALL_SEND_CID            2
+#define MMC_CMD_SET_RELATIVE_ADDR       3
+#define MMC_CMD_SET_DSR                 4
+#define MMC_CMD_SWITCH                  6
+#define MMC_CMD_SELECT_CARD             7
+#define MMC_CMD_SEND_EXT_CSD            8
+#define MMC_CMD_SEND_CSD                9
+#define MMC_CMD_SEND_CID                10
+#define MMC_CMD_STOP_TRANSMISSION       12
+#define MMC_CMD_SEND_STATUS             13
+#define MMC_CMD_SET_BLOCKLEN            16
+#define MMC_CMD_READ_SINGLE_BLOCK       17
+#define MMC_CMD_READ_MULTIPLE_BLOCK     18
+#define MMC_CMD_SET_BLOCK_COUNT         23
+#define MMC_CMD_WRITE_SINGLE_BLOCK      24
+#define MMC_CMD_WRITE_MULTIPLE_BLOCK    25
+#define MMC_CMD_ERASE_GROUP_START       35
+#define MMC_CMD_ERASE_GROUP_END         36
+#define MMC_CMD_ERASE                   38
+#define MMC_CMD_APP_CMD                 55
+#define MMC_CMD_GEN_CMD			56
+#define MMC_CMD_SPI_READ_OCR            58
+#define MMC_CMD_SPI_CRC_ON_OFF          59
+#define MMC_CMD_RES_MAN                 62
+
 enum MMCResponseType {
 	MMC_RSP_NONE,
 	MMC_RSP_R1,
@@ -19,6 +46,7 @@ struct MMCResponse
 	unsigned int mBits;
 	int mTimeout;
 	bool mBusy;
+	bool mHasData;
 };
 
 class SDMMCHelpers
